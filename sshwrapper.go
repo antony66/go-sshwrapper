@@ -13,6 +13,7 @@ type SSHConn struct {
 	client       *ssh.Client
 	agentConn    net.Conn
 	forwardAgent bool
+	envs         map[string]string
 }
 
 func NewSSHConn(user, host string, port int, socket string, forwardAgent bool) (*SSHConn, error) {
@@ -76,6 +77,12 @@ func (s *SSHConn) Output(cmd string, in io.Reader) ([]byte, error) {
 		return nil, err
 	}
 
+	for k, v := range s.envs {
+		if err := session.Setenv(k, v); err != nil {
+			return nil, err
+		}
+	}
+
 	session.Stdin = in
 
 	return session.Output(cmd)
@@ -90,6 +97,12 @@ func (s *SSHConn) CombinedOutput(cmd string, in io.Reader) ([]byte, error) {
 
 	if err := s.requestAgentForwarding(session); err != nil {
 		return nil, err
+	}
+
+	for k, v := range s.envs {
+		if err := session.Setenv(k, v); err != nil {
+			return nil, err
+		}
 	}
 
 	session.Stdin = in
@@ -108,9 +121,19 @@ func (s *SSHConn) Run(cmd string, in io.Reader, outWriter, errWriter io.Writer) 
 		return err
 	}
 
+	for k, v := range s.envs {
+		if err := session.Setenv(k, v); err != nil {
+			return err
+		}
+	}
+
 	session.Stdout = outWriter
 	session.Stderr = errWriter
 	session.Stdin = in
 	err = session.Run(cmd)
 	return err
+}
+
+func (s *SSHConn) SetEnvs(e map[string]string) {
+	s.envs = e
 }
