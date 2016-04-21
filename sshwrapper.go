@@ -21,6 +21,13 @@ func NewSSHConn(user, host string, port int, socket string, forwardAgent bool) (
 	if err != nil {
 		return nil, err
 	}
+	var agentOk bool
+	defer func() {
+		if !agentOk {
+			agentConn.Close()
+		}
+	}()
+
 	sshAgent := agent.NewClient(agentConn)
 	signers, err := sshAgent.Signers()
 	if err != nil {
@@ -36,12 +43,21 @@ func NewSSHConn(user, host string, port int, socket string, forwardAgent bool) (
 	if err != nil {
 		return nil, err
 	}
+	var clientOk bool
+	defer func() {
+		if !clientOk {
+			client.Close()
+		}
+	}()
 
 	if forwardAgent {
 		if err := agent.ForwardToAgent(client, sshAgent); err != nil {
 			return nil, fmt.Errorf("SetupForwardKeyring: %v", err)
 		}
 	}
+
+	agentOk = true
+	clientOk = true
 
 	c := SSHConn{
 		client:       client,
