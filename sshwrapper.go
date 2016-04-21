@@ -10,20 +10,22 @@ import (
 )
 
 type SSHConn struct {
-	client *ssh.Client
+	client       *ssh.Client
+	agentConn    net.Conn
+	forwardAgent bool
 }
 
-func NewSSHConn(user, host string, port int, socket string) (*SSHConn, error) {
+func NewSSHConn(user, host string, port int, socket string, forwardAgent bool) (*SSHConn, error) {
 	agentConn, err := net.Dial("unix", socket)
 	if err != nil {
 		return nil, err
 	}
-	defer agentConn.Close()
 	sshAgent := agent.NewClient(agentConn)
 	signers, err := sshAgent.Signers()
 	if err != nil {
 		return nil, err
 	}
+
 	config := &ssh.ClientConfig{
 		User: user,
 		Auth: []ssh.AuthMethod{ssh.PublicKeys(signers...)},
@@ -33,11 +35,34 @@ func NewSSHConn(user, host string, port int, socket string) (*SSHConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &SSHConn{client}, nil
+
+	if forwardAgent {
+		if err := agent.ForwardToAgent(client, sshAgent); err != nil {
+			return nil, fmt.Errorf("SetupForwardKeyring: %v", err)
+		}
+	}
+
+	c := SSHConn{
+		client:       client,
+		agentConn:    agentConn,
+		forwardAgent: forwardAgent,
+	}
+	return &c, nil
 }
 
 func (s *SSHConn) Close() {
+	s.agentConn.Close()
 	s.client.Close()
+}
+
+func (s *SSHConn) requestAgentForwarding(session *ssh.Session) error {
+	if !s.forwardAgent {
+		return nil
+	}
+	if err := agent.RequestAgentForwarding(session); err != nil {
+		return fmt.Errorf("RequestAgentForwarding: %v", err)
+	}
+	return nil
 }
 
 func (s *SSHConn) Output(cmd string, in io.Reader) ([]byte, error) {
@@ -46,7 +71,13 @@ func (s *SSHConn) Output(cmd string, in io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	defer session.Close()
+
+	if err := s.requestAgentForwarding(session); err != nil {
+		return nil, err
+	}
+
 	session.Stdin = in
+
 	return session.Output(cmd)
 }
 
@@ -56,7 +87,13 @@ func (s *SSHConn) CombinedOutput(cmd string, in io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	defer session.Close()
+
+	if err := s.requestAgentForwarding(session); err != nil {
+		return nil, err
+	}
+
 	session.Stdin = in
+
 	return session.CombinedOutput(cmd)
 }
 
@@ -66,6 +103,11 @@ func (s *SSHConn) Run(cmd string, in io.Reader, outWriter, errWriter io.Writer) 
 		return err
 	}
 	defer session.Close()
+
+	if err := s.requestAgentForwarding(session); err != nil {
+		return err
+	}
+
 	session.Stdout = outWriter
 	session.Stderr = errWriter
 	session.Stdin = in
