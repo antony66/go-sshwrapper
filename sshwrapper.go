@@ -86,6 +86,7 @@ func Dial(addr string, socket string, forwardAgent bool) (*SSHConn, error) {
 	return &c, nil
 }
 
+// Close closes the connection
 func (s *SSHConn) Close() {
 	s.agentConn.Close()
 	s.client.Close()
@@ -157,12 +158,12 @@ func (s *SSHConn) Run(cmd string, in io.Reader, outWriter, errWriter io.Writer) 
 	}
 	defer session.Close()
 
-	if err := s.requestAgentForwarding(session); err != nil {
+	if err = s.requestAgentForwarding(session); err != nil {
 		return err
 	}
 
 	for k, v := range s.envs {
-		if err := session.Setenv(k, v); err != nil {
+		if err = session.Setenv(k, v); err != nil {
 			return err
 		}
 	}
