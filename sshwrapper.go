@@ -54,9 +54,10 @@ func Dial(addr string, socket string, forwardAgent bool) (*SSHConn, error) {
 	}
 
 	config := &ssh.ClientConfig{
-		User:    user,
-		Auth:    []ssh.AuthMethod{ssh.PublicKeys(signers...)},
-		Timeout: ConnTimeout,
+		User:            user,
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signers...)},
+		Timeout:         ConnTimeout,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 	client, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", host, port), config)
 	if err != nil {
